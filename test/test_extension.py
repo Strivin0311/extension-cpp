@@ -106,10 +106,17 @@ class TestMyAddOut(TestCase):
 
     def test_opcheck_cpu(self):
         self._opcheck("cpu")
-
+        
     @unittest.skipIf(not torch.cuda.is_available(), "requires cuda")
     def test_opcheck_cuda(self):
         self._opcheck("cuda")
+
+    def test_correctness_cpu(self):
+        self._test_correctness("cpu")
+        
+    @unittest.skipIf(not torch.cuda.is_available(), "requires cuda")
+    def test_correctness_cuda(self):
+        self._test_correctness("cuda")
 
 
 if __name__ == "__main__":
