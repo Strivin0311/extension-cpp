@@ -1,12 +1,26 @@
 import torch
 from torch import Tensor
 
-__all__ = ["mymuladd", "myadd_out"]
+__all__ = [
+    "mymuladd",
+    "mymulsub",
+    "myadd_out",
+]
 
 
 def mymuladd(a: Tensor, b: Tensor, c: float) -> Tensor:
     """Performs a * b + c in an efficient fused kernel"""
     return torch.ops.extension_cpp.mymuladd.default(a, b, c)
+
+
+def myadd_out(a: Tensor, b: Tensor, out: Tensor) -> None:
+    """Writes a + b into out"""
+    torch.ops.extension_cpp.myadd_out.default(a, b, out)
+
+
+def mymulsub(a: Tensor, b: Tensor, s: float) -> Tensor:
+    """Performs a * b - s in an efficient fused kernel"""
+    return torch.ops.extension_cpp.mymulsub.default(a, b, s)
 
 
 # Registers a FakeTensor kernel (aka "meta kernel", "abstract impl")
@@ -22,18 +36,29 @@ def _(a, b, c):
     return torch.empty_like(a)
 
 
+@torch.library.register_fake("extension_cpp::mymulsub")
+def _(a, b, s):
+    torch._check(a.shape == b.shape)
+    torch._check(a.dtype == torch.float)
+    torch._check(b.dtype == torch.float)
+    torch._check(a.device == b.device)
+    return torch.empty_like(a)
+
+
 def _backward(ctx, grad):
+    """Since c = a * b + s, then da = dc * b, and db = dc * a
+    """
     a, b = ctx.saved_tensors
     grad_a, grad_b = None, None
-    if ctx.needs_input_grad[0]:
+    if ctx.needs_input_grad[0]: # da = dc * b
         grad_a = torch.ops.extension_cpp.mymul.default(grad, b)
-    if ctx.needs_input_grad[1]:
+    if ctx.needs_input_grad[1]: # db = dc * a
         grad_b = torch.ops.extension_cpp.mymul.default(grad, a)
     return grad_a, grad_b, None
 
 
 def _setup_context(ctx, inputs, output):
-    a, b, c = inputs
+    a, b, _ = inputs
     saved_a, saved_b = None, None
     if ctx.needs_input_grad[0]:
         saved_b = b
@@ -46,7 +71,16 @@ def _setup_context(ctx, inputs, output):
 # the backward formula for the operator and a `setup_context` function
 # to save values to be used in the backward.
 torch.library.register_autograd(
-    "extension_cpp::mymuladd", _backward, setup_context=_setup_context)
+    "extension_cpp::mymuladd", 
+    _backward, # positional-only arg
+    setup_context=_setup_context
+)
+
+torch.library.register_autograd(
+    "extension_cpp::mymulsub", 
+    _backward, # positional-only arg
+    setup_context=_setup_context
+)
 
 
 @torch.library.register_fake("extension_cpp::mymul")
@@ -56,8 +90,3 @@ def _(a, b):
     torch._check(b.dtype == torch.float)
     torch._check(a.device == b.device)
     return torch.empty_like(a)
-
-
-def myadd_out(a: Tensor, b: Tensor, out: Tensor) -> None:
-    """Writes a + b into out"""
-    torch.ops.extension_cpp.myadd_out.default(a, b, out)

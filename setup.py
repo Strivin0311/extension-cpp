@@ -42,6 +42,8 @@ def get_extensions():
         ],
         "nvcc": [
             "-O3" if not debug_mode else "-O0",
+            "-gencode",
+            "arch=compute_90,code=sm_90", # only for sm90
         ],
     }
     if debug_mode:
@@ -74,14 +76,20 @@ def get_extensions():
 
 setup(
     name=library_name,
-    version="0.0.1",
+    version="0.0.2",
     packages=find_packages(),
     ext_modules=get_extensions(),
     install_requires=["torch"],
     description="Example of PyTorch C++ and CUDA extensions",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/pytorch/extension-cpp",
+    url="https://github.com/Strivin0311/extension-cpp",
     cmdclass={"build_ext": BuildExtension},
+    # NOTE: Python 3.2 introduced the Limited API, a subset of Python’s C API. 
+    # Extensions that only use the Limited API can be compiled once and work with multiple versions of Python.
+    # To enable this, Python provides a Stable ABI (Application Binary Interface): a set of symbols that will remain compatible across Python 3.x versions.
+    # On some platforms, Python will look for and load shared library files named with the `abi3`` tag (e.g. mymodule.abi3.so). 
+    # It does not check if such extensions conform to a Stable ABI. 
+    # The user (or their packaging tools) need to ensure that, for example, extensions built with the 3.10+ Limited API are not installed for lower versions of Python.
     options={"bdist_wheel": {"py_limited_api": "cp39"}} if py_limited_api else {},
 )

@@ -12,7 +12,18 @@ def reference_muladd(a, b, c):
     return a * b + c
 
 
+def reference_mulsub(a, b, s):
+    return a * b - s
+
+
 class TestMyMulAdd(TestCase):
+    
+    def setUp(self):
+        super().setUp()
+        
+        self.reference_func = reference_muladd
+        self.impl_func = extension_cpp.ops.mymuladd
+    
     def sample_inputs(self, device, *, requires_grad=False):
         def make_tensor(*size):
             return torch.randn(size, device=device, requires_grad=requires_grad)
@@ -30,8 +41,8 @@ class TestMyMulAdd(TestCase):
     def _test_correctness(self, device):
         samples = self.sample_inputs(device)
         for args in samples:
-            result = extension_cpp.ops.mymuladd(*args)
-            expected = reference_muladd(*args)
+            result = self.impl_func(*args)
+            expected = self.reference_func(*args)
             torch.testing.assert_close(result, expected)
 
     def test_correctness_cpu(self):
@@ -45,11 +56,11 @@ class TestMyMulAdd(TestCase):
         samples = self.sample_inputs(device, requires_grad=True)
         for args in samples:
             diff_tensors = [a for a in args if isinstance(a, torch.Tensor) and a.requires_grad]
-            out = extension_cpp.ops.mymuladd(*args)
+            out = self.impl_func(*args)
             grad_out = torch.randn_like(out)
             result = torch.autograd.grad(out, diff_tensors, grad_out)
 
-            out = reference_muladd(*args)
+            out = self.reference_func(*args)
             expected = torch.autograd.grad(out, diff_tensors, grad_out)
 
             torch.testing.assert_close(result, expected)
@@ -117,6 +128,15 @@ class TestMyAddOut(TestCase):
     @unittest.skipIf(not torch.cuda.is_available(), "requires cuda")
     def test_correctness_cuda(self):
         self._test_correctness("cuda")
+
+
+class TestMyMulSub(TestMyMulAdd):
+    
+    def setUp(self):
+        super().setUp()
+        
+        self.reference_func = reference_mulsub
+        self.impl_func = extension_cpp.ops.mymulsub
 
 
 if __name__ == "__main__":
