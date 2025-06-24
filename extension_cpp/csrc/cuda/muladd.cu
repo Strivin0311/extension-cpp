@@ -21,6 +21,25 @@ at::Tensor mymuladd_cuda(const at::Tensor& a, const at::Tensor& b, double c) {
   at::Tensor a_contig = a.contiguous();
   at::Tensor b_contig = b.contiguous();
   at::Tensor result = at::empty(a_contig.sizes(), a_contig.options());
+
+  // test c10::IntArrayRef
+  // auto a_size = a.sizes();
+  // std::vector<int64_t> a_shape(a_size.begin(), a_size.end());
+  // printf("original a shape: ");
+  // for (auto val : a_shape) {
+  //   printf("%lld ", val);
+  // }
+  // printf("\n");
+
+  // a_shape[0] *= 2;
+  // // auto a_shape_ext = c10::IntArrayRef(a_shape);
+  // auto a_shape_ext = c10::makeArrayRef(a_shape);
+  // printf("modified a shape (first dim doubled): ");
+  // for (auto val : a_shape_ext) {
+  //   printf("%lld ", val);
+  // }
+  // printf("\n");
+
   const float* a_ptr = a_contig.data_ptr<float>();
   const float* b_ptr = b_contig.data_ptr<float>();
   float* result_ptr = result.data_ptr<float>();
@@ -44,6 +63,7 @@ at::Tensor mymul_cuda(const at::Tensor& a, const at::Tensor& b) {
   at::Tensor a_contig = a.contiguous();
   at::Tensor b_contig = b.contiguous();
   at::Tensor result = at::empty(a_contig.sizes(), a_contig.options());
+
   const float* a_ptr = a_contig.data_ptr<float>();
   const float* b_ptr = b_contig.data_ptr<float>();
   float* result_ptr = result.data_ptr<float>();
@@ -67,6 +87,7 @@ void myadd_out_cuda(const at::Tensor& a, const at::Tensor& b, at::Tensor& out) {
   TORCH_INTERNAL_ASSERT(a.device().type() == at::DeviceType::CUDA);
   TORCH_INTERNAL_ASSERT(b.device().type() == at::DeviceType::CUDA);
   TORCH_INTERNAL_ASSERT(out.device().type() == at::DeviceType::CUDA);
+
   at::Tensor a_contig = a.contiguous();
   at::Tensor b_contig = b.contiguous();
   const float* a_ptr = a_contig.data_ptr<float>();
@@ -75,7 +96,6 @@ void myadd_out_cuda(const at::Tensor& a, const at::Tensor& b, at::Tensor& out) {
   int numel = a_contig.numel();
   add_kernel<<<(numel+255)/256, 256>>>(numel, a_ptr, b_ptr, result_ptr);
 }
-
 
 // Registers CUDA implementations for mymuladd, mymul, myadd_out
 TORCH_LIBRARY_IMPL(extension_cpp, CUDA, m) {
