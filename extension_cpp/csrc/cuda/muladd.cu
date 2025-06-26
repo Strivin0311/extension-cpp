@@ -32,7 +32,7 @@ torch::Tensor add_scalar_cuda(torch::Tensor input, torch::Scalar value) {
     AT_DISPATCH_ALL_TYPES_AND2(at::ScalarType::Half, at::ScalarType::BFloat16, /* 增加float16, bfloat16 两种类型*/
         input.scalar_type(), "elementwise_add", [&] {
             // 标量值转换为当前类型
-            scalar_t val = value.to<scalar_t>();
+            scalar_t val = value.to<scalar_t>(); /* scalar_t是宏里自动生成的类型，直接在lambda函数中使用 */
             elementwise_add_kernel<scalar_t><<<grid, block>>>(
                 output.data_ptr<scalar_t>(),
                 input.const_data_ptr<scalar_t>(),
@@ -44,6 +44,111 @@ torch::Tensor add_scalar_cuda(torch::Tensor input, torch::Scalar value) {
 
     return output;
 }
+
+
+__device__ int64_t binary_search_split(
+    const int64_t* d_cu_split_size_list,
+    int64_t start,
+    int64_t end,
+    int64_t idx,
+    int64_t stride0
+) {
+    assert(start < end);
+    int64_t low = start, high = end;
+    while (low < high) { // [low, high)
+        int64_t mid = low + (high - low) / 2;
+        if (idx < d_cu_split_size_list[mid] * stride0) {
+            high = mid; // [low, mid)
+        } else {
+            low = mid + 1; // [mid + 1, high)
+        }
+    }
+    return low - 1; // low == high
+}
+
+
+template <typename scalar_t>
+__global__ void range_reduce_kernel(
+    scalar_t* recv_buffer,
+    const scalar_t* repeated_recv_buffer,
+    const int64_t* d_split_size_list,
+    const int64_t* d_num_repeats_list,
+    const int64_t* d_cu_split_size_list,
+    const int64_t* d_repeated_cu_split_size_list,
+    int64_t seqlen,
+    int64_t num_splits,
+    int64_t stride0
+) {
+    int64_t tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int64_t num_threads_per_grid = blockDim.x * gridDim.x;
+    int64_t num_elements = seqlen * stride0;
+
+    int64_t split_idx = 0;
+    for (auto idx = tid; idx < num_elements; idx += num_threads_per_grid) {
+        // search for split idx that the current idx belongs
+        split_idx = binary_search_split(
+            d_cu_split_size_list,
+            split_idx,
+            num_splits,
+            idx,
+            stride0
+        );
+
+        // get the info about this split
+        auto recv_split_start = d_cu_split_size_list[split_idx] * stride0;
+        auto recv_split_size = d_split_size_list[split_idx] * stride0;
+        auto repeated_recv_split_start = d_repeated_cu_split_size_list[split_idx] * stride0;
+        auto num_repeats = d_num_repeats_list[split_idx];
+        auto recv_split_offset_to_idx = idx - recv_split_start;
+
+        // load the recv data with its ptr that the current idx needs to reduce to
+        scalar_t* recv_data_ptr = (recv_buffer + idx);
+        scalar_t recv_reduce_data = *recv_data_ptr;
+
+        // reduce the recv data from the corr. position in repeated_recv_buffer
+        const scalar_t* repeated_recv_data_ptr = (repeated_recv_buffer + repeated_recv_split_start + recv_split_offset_to_idx);
+        for (int64_t r = 0; r < num_repeats; ++r) {
+            recv_reduce_data += *(repeated_recv_data_ptr + r * recv_split_size);
+        }
+
+        // write the reduced data back to recv_buffer
+        *recv_data_ptr = recv_reduce_data;
+    }
+}
+
+void range_reduce_cuda(
+    at::Tensor& recv_buffer,
+    at::Tensor& repeated_recv_buffer,
+    at::Tensor& d_split_size_list,
+    at::Tensor& d_num_repeats_list,
+    at::Tensor& d_cu_split_size_list,
+    at::Tensor& d_repeated_cu_split_size_list,
+    int64_t seqlen,
+    int64_t num_splits,
+    int64_t stride0
+) {
+    dim3 gridDims(10); dim3 blockDims(512);
+    AT_DISPATCH_ALL_TYPES_AND2(
+      at::ScalarType::Half, at::ScalarType::BFloat16,
+      recv_buffer.scalar_type(), 
+      "group_reduce_nccl_post_process", 
+      [&] {
+          range_reduce_kernel<scalar_t>
+          <<<gridDims, blockDims>>>(
+              recv_buffer.data_ptr<scalar_t>(),
+              repeated_recv_buffer.data_ptr<scalar_t>(),
+              d_split_size_list.data_ptr<int64_t>(),
+              d_num_repeats_list.data_ptr<int64_t>(),
+              d_cu_split_size_list.data_ptr<int64_t>(),
+              d_repeated_cu_split_size_list.data_ptr<int64_t>(),
+              seqlen,
+              num_splits,
+              stride0
+          );
+        }
+    );
+}
+
 
 __global__ void muladd_kernel(int numel, const float* a, const float* b, float c, float* result) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -141,6 +246,7 @@ TORCH_LIBRARY_IMPL(extension_cpp, CUDA, m) {
   m.impl("mymul", &mymul_cuda);
   m.impl("myadd_out", &myadd_out_cuda);
   m.impl("add_scalar", &add_scalar_cuda);
+  m.impl("range_reduce", &range_reduce_cuda);
 }
 
 }

@@ -6,8 +6,32 @@ __all__ = [
     "mymulsub",
     "myadd_out",
     "add_scalar",
+    "range_reduce",
 ]
 
+
+def range_reduce(
+    recv_buffer: Tensor,
+    repeated_recv_buffer: Tensor,
+    split_size_list: Tensor,
+    num_repeats_list: Tensor,
+    cu_split_size_list: Tensor,
+    repeated_cu_split_size_list: Tensor,
+    seqlen: int,
+    num_splits: int, 
+    stride0: int,
+):
+    torch.ops.extension_cpp.range_reduce.default(
+        recv_buffer,
+        repeated_recv_buffer,
+        split_size_list,
+        num_repeats_list,
+        cu_split_size_list,
+        repeated_cu_split_size_list,
+        seqlen,
+        num_splits,
+        stride0,
+    )
 
 def add_scalar(a: Tensor, s: Tensor) -> Tensor:
     return torch.ops.extension_cpp.add_scalar.default(a, s)

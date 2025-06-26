@@ -125,6 +125,12 @@ TORCH_LIBRARY(extension_cpp, m) {
   m.def("myadd_out(Tensor a, Tensor b, Tensor(a!) out) -> ()");
   m.def("mymulsub(Tensor a, Tensor b, float s) -> Tensor");
   m.def("add_scalar(Tensor a, Scalar s) -> Tensor");
+  m.def(
+    "range_reduce(Tensor recv_buffer, Tensor repeated_recv_buffer, "
+    "Tensor split_size_list, Tensor num_repeats_list, "
+    "Tensor cu_split_size_list, Tensor repeated_cu_split_size_list, "
+    "int seqlen, int num_splits, int stride0) -> ()"
+  );
 }
 
 // Registers CPU implementations for mymuladd, mymul, myadd_out
@@ -134,4 +140,5 @@ TORCH_LIBRARY_IMPL(extension_cpp, CPU, m) {
   m.impl("myadd_out", &myadd_out_cpu);
   m.impl("mymulsub", &mymulsub_cpu);
 }
+
 }
