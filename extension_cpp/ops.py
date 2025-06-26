@@ -5,7 +5,12 @@ __all__ = [
     "mymuladd",
     "mymulsub",
     "myadd_out",
+    "add_scalar",
 ]
+
+
+def add_scalar(a: Tensor, s: Tensor) -> Tensor:
+    return torch.ops.extension_cpp.add_scalar.default(a, s)
 
 
 def mymuladd(a: Tensor, b: Tensor, c: float) -> Tensor:
@@ -38,6 +43,15 @@ def _(a, b, c):
 
 @torch.library.register_fake("extension_cpp::mymulsub")
 def _(a, b, s):
+    torch._check(a.shape == b.shape)
+    torch._check(a.dtype == torch.float)
+    torch._check(b.dtype == torch.float)
+    torch._check(a.device == b.device)
+    return torch.empty_like(a)
+
+
+@torch.library.register_fake("extension_cpp::mymul")
+def _(a, b):
     torch._check(a.shape == b.shape)
     torch._check(a.dtype == torch.float)
     torch._check(b.dtype == torch.float)
@@ -81,12 +95,3 @@ torch.library.register_autograd(
     _backward, # positional-only arg
     setup_context=_setup_context
 )
-
-
-@torch.library.register_fake("extension_cpp::mymul")
-def _(a, b):
-    torch._check(a.shape == b.shape)
-    torch._check(a.dtype == torch.float)
-    torch._check(b.dtype == torch.float)
-    torch._check(a.device == b.device)
-    return torch.empty_like(a)

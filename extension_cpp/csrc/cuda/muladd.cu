@@ -7,6 +7,44 @@
 
 namespace extension_cpp {
 
+template <typename scalar_t>
+__global__ void elementwise_add_kernel(
+    scalar_t* output,
+    const scalar_t* input,
+    scalar_t value,
+    int64_t num_elements
+) {
+    const int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_elements) {
+        output[idx] = input[idx] + value;
+    }
+}
+
+torch::Tensor add_scalar_cuda(torch::Tensor input, torch::Scalar value) {
+    auto output = torch::empty_like(input);
+    int64_t num_elements = input.numel();
+    dim3 block(256);
+    dim3 grid((num_elements + block.x - 1) / block.x);
+
+    // 核心：类型分发宏
+    // AT_DISPATCH_ALL_TYPES( /* 原始类型 */
+    // AT_DISPATCH_ALL_TYPES_AND(at::ScalarType::BFloat16, /* 增加bfloat16一种类型 */
+    AT_DISPATCH_ALL_TYPES_AND2(at::ScalarType::Half, at::ScalarType::BFloat16, /* 增加float16, bfloat16 两种类型*/
+        input.scalar_type(), "elementwise_add", [&] {
+            // 标量值转换为当前类型
+            scalar_t val = value.to<scalar_t>();
+            elementwise_add_kernel<scalar_t><<<grid, block>>>(
+                output.data_ptr<scalar_t>(),
+                input.const_data_ptr<scalar_t>(),
+                val,
+                num_elements
+            );
+        }
+    );
+
+    return output;
+}
+
 __global__ void muladd_kernel(int numel, const float* a, const float* b, float c, float* result) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < numel) result[idx] = a[idx] * b[idx] + c;
@@ -102,6 +140,7 @@ TORCH_LIBRARY_IMPL(extension_cpp, CUDA, m) {
   m.impl("mymuladd", &mymuladd_cuda);
   m.impl("mymul", &mymul_cuda);
   m.impl("myadd_out", &myadd_out_cuda);
+  m.impl("add_scalar", &add_scalar_cuda);
 }
 
 }

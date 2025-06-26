@@ -124,14 +124,14 @@ TORCH_LIBRARY(extension_cpp, m) {
   m.def("mymul(Tensor a, Tensor b) -> Tensor");
   m.def("myadd_out(Tensor a, Tensor b, Tensor(a!) out) -> ()");
   m.def("mymulsub(Tensor a, Tensor b, float s) -> Tensor");
+  m.def("add_scalar(Tensor a, Scalar s) -> Tensor");
 }
 
-// Registers CUDA implementations for mymuladd, mymul, myadd_out
+// Registers CPU implementations for mymuladd, mymul, myadd_out
 TORCH_LIBRARY_IMPL(extension_cpp, CPU, m) {
   m.impl("mymuladd", &mymuladd_cpu);
   m.impl("mymul", &mymul_cpu);
   m.impl("myadd_out", &myadd_out_cpu);
   m.impl("mymulsub", &mymulsub_cpu);
 }
-
 }
